@@ -152,10 +152,7 @@ TEST_CASE("scanning a directory visits text files and skips .git, binary and lar
 
     const auto result = marker_scanner(100).scan(dir.path());
 
-    auto findings = result.findings;
-    std::sort(findings.begin(), findings.end(), [](const auto& l, const auto& r) {
-        return l.file.generic_string() < r.file.generic_string();
-    });
+    const auto& findings = result.findings;  // sorted by the scanner
     REQUIRE(findings.size() == 2);
     CHECK(findings[0].file.generic_string() == "a.txt");
     CHECK(findings[0].line == 2);
@@ -166,6 +163,20 @@ TEST_CASE("scanning a directory visits text files and skips .git, binary and lar
     CHECK(result.skipped_binary == 1);
     CHECK(result.skipped_large == 1);
     CHECK(result.unreadable.empty());
+}
+
+TEST_CASE("the folder's .unsecretignore skips files and whole folders") {
+    TempDir dir;
+    dir.write(".unsecretignore", "# fake keys\nfixtures/\n*.min.js\n");
+    dir.write("fixtures/deep/key.txt", "FINDME");
+    dir.write("web/app.min.js", "FINDME");
+    dir.write("web/app.js", "FINDME");
+
+    const auto result = marker_scanner().scan(dir.path());
+
+    REQUIRE(result.findings.size() == 1);
+    CHECK(result.findings[0].file.generic_string() == "web/app.js");
+    CHECK(result.skipped_ignored == 2);  // the folder and the .min.js file
 }
 
 TEST_CASE("scanning a single file reports the path as given") {

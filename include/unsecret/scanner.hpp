@@ -18,6 +18,7 @@ struct ScanResult {
     std::uintmax_t bytes_scanned = 0;
     std::size_t skipped_binary = 0;
     std::size_t skipped_large = 0;
+    std::size_t skipped_ignored = 0;  // files and folders
     std::vector<std::filesystem::path> unreadable;  // a warning, not an error
 };
 
@@ -40,7 +41,10 @@ public:
     // On by default. Off is for tests and the benchmark.
     void use_prefilter(bool on) { prefilter_ = on; }
 
+    static constexpr const char* ignore_file_name = ".unsecretignore";
+
     // A file or a folder. Throws if `root` can't be read at all.
+    // A folder's .unsecretignore is applied.
     ScanResult scan(const std::filesystem::path& root) const;
 
     void scan_text(std::string_view text, const std::filesystem::path& file,

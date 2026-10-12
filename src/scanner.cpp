@@ -9,6 +9,8 @@
 #include <tuple>
 #include <utility>
 
+#include "unsecret/ignore_list.hpp"
+
 namespace fs = std::filesystem;
 
 namespace unsecret {
@@ -80,12 +82,14 @@ ScanResult Scanner::scan(const fs::path& root) const {
         throw fs::filesystem_error("cannot scan", root, ec);
     }
 
+    const auto ignore = IgnoreList::load(root / ignore_file_name);
     fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec);
     const fs::recursive_directory_iterator end;
 
     // If the walk breaks, throw: a half scan must not look clean.
     for (; !ec && it != end; it.increment(ec)) {
         const fs::directory_entry& entry = *it;
+        const auto relative = entry.path().lexically_relative(root);
         std::error_code entry_ec;
 
         // Links can leave the folder or loop.
@@ -95,19 +99,26 @@ ScanResult Scanner::scan(const fs::path& root) const {
         if (entry.is_directory(entry_ec)) {
             if (entry.path().filename() == ".git") {
                 it.disable_recursion_pending();
+            } else if (ignore.ignores(relative.generic_string(), true)) {
+                it.disable_recursion_pending();
+                ++result.skipped_ignored;
             }
             continue;
         }
         if (!entry.is_regular_file(entry_ec)) {
             continue;
         }
+        if (ignore.ignores(relative.generic_string(), false)) {
+            ++result.skipped_ignored;
+            continue;
+        }
 
         const auto size = entry.file_size(entry_ec);
         if (entry_ec) {
-            result.unreadable.push_back(entry.path().lexically_relative(root));
+            result.unreadable.push_back(relative);
             continue;
         }
-        scan_file(entry.path(), entry.path().lexically_relative(root), size, result);
+        scan_file(entry.path(), relative, size, result);
     }
     if (ec) {
         throw fs::filesystem_error("cannot walk directory", root, ec);

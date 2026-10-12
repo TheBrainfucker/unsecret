@@ -44,6 +44,7 @@ endfunction()
 add_library(unsecret_core
     src/regex_rule.cpp
     src/default_rules.cpp
+    src/ignore_list.cpp
     src/keyword_filter.cpp
     src/report.cpp
     src/entropy_rule.cpp
@@ -76,6 +77,7 @@ if(UNSECRET_BUILD_TESTS)
     add_executable(unsecret_tests
         tests/test_rules.cpp
         tests/test_default_rules.cpp
+        tests/test_ignore_list.cpp
         tests/test_keyword_filter.cpp
         tests/test_report.cpp
         tests/test_scanner.cpp
@@ -92,4 +94,7 @@ if(UNSECRET_BUILD_TESTS)
         -DUNSECRET=$<TARGET_FILE:unsecret>
         -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli_test
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_test.cmake)
+
+    # This repo must scan clean.
+    add_test(NAME self_scan COMMAND unsecret ${CMAKE_CURRENT_SOURCE_DIR})
 endif()

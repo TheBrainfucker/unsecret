@@ -64,6 +64,7 @@ void print_report(const ScanResult& result, std::ostream& out, std::ostream& sum
     };
     add(result.skipped_binary, "binary");
     add(result.skipped_large, "too large");
+    add(result.skipped_ignored, "ignored");
     add(result.unreadable.size(), "unreadable");
     if (!skipped.empty()) {
         summary << "; skipped " << skipped;
