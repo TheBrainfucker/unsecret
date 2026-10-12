@@ -46,8 +46,25 @@ bool is_hex(std::string_view s) {
     return true;
 }
 
-EntropyRule::EntropyRule(double hex_threshold, double base64_threshold, std::size_t min_length)
-    : hex_threshold_(hex_threshold), base64_threshold_(base64_threshold), min_length_(min_length) {}
+bool is_uuid(std::string_view s) {
+    if (s.size() != 36) {
+        return false;
+    }
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        const bool dash = i == 8 || i == 13 || i == 18 || i == 23;
+        if (dash ? s[i] != '-' : !is_hex_char(s[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+EntropyRule::EntropyRule(double hex_threshold, double base64_threshold, std::size_t min_length,
+                         bool uuid_as_hex)
+    : hex_threshold_(hex_threshold),
+      base64_threshold_(base64_threshold),
+      min_length_(min_length),
+      uuid_as_hex_(uuid_as_hex) {}
 
 std::string_view EntropyRule::id() const { return "high-entropy-string"; }
 
@@ -64,8 +81,9 @@ std::vector<Match> EntropyRule::find(std::string_view line) const {
             ++i;
         }
         const auto word = line.substr(start, i - start);
+        const bool hex = is_hex(word) || (uuid_as_hex_ && is_uuid(word));
         if (word.size() >= min_length_ &&
-            shannon_entropy(word) >= (is_hex(word) ? hex_threshold_ : base64_threshold_)) {
+            shannon_entropy(word) >= (hex ? hex_threshold_ : base64_threshold_)) {
             matches.push_back({start, word.size()});
         }
     }

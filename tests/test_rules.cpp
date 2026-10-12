@@ -90,3 +90,13 @@ TEST_CASE("an invalid regex pattern throws when the rule is built") {
     CHECK_THROWS_AS(unsecret::RegexRule("bad", "(unclosed"), std::regex_error);
 }
 
+
+TEST_CASE("UUIDs count as hex, so the hex threshold applies") {
+    const std::string uuid = "9f1c2b7e" "-4a3d-4c8e-b2f1-7d6e5a4b3c21";
+    CHECK(unsecret::is_uuid(uuid));
+    CHECK_FALSE(unsecret::is_uuid("9f1c2b7e4a3d4c8e" "b2f17d6e5a4b3c21"));  // no dashes
+    CHECK_FALSE(unsecret::is_hex(uuid));
+
+    CHECK(unsecret::EntropyRule().find("id = " + uuid).size() == 1);
+    CHECK(unsecret::EntropyRule(3.0, 4.5, 20, false).find("id = " + uuid).empty());
+}

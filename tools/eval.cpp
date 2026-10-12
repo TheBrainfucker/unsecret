@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <exception>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <map>
 #include <set>
@@ -67,7 +68,10 @@ int scan(const std::string& out_path, bool unmasked, const std::vector<std::stri
             char entropy[16];
             std::snprintf(entropy, sizeof entropy, "%.3f", unsecret::shannon_entropy(f.match));
             out << '\t' << f.rule_id << '\t' << entropy << '\t'
-                << (unsecret::is_hex(f.match) ? "hex" : "other") << '\t' << f.match.size() << '\t'
+                << (unsecret::is_uuid(f.match)  ? "uuid"
+                    : unsecret::is_hex(f.match) ? "hex"
+                                                : "other")
+                << '\t' << f.match.size() << '\t'
                 << folder << '/' << f.file.generic_string() << ':' << f.line << ':' << f.column
                 << '\t' << no_tabs(unmasked ? f.match : unsecret::mask(f.match)) << '\n';
         }
@@ -88,7 +92,8 @@ struct Row {
     std::string label;
     std::string rule;
     double entropy = 0;
-    bool hex = false;
+    bool hex = false;   // uses the hex threshold
+    bool uuid = false;  // hex only because UUIDs count as hex
     std::string location;  // path:line:column
 };
 
@@ -112,7 +117,8 @@ std::vector<Row> read_rows(const std::string& path) {
         if (cols.size() < 6) {
             continue;
         }
-        rows.push_back({cols[0], cols[1], std::stod(cols[2]), cols[3] == "hex", cols[5]});
+        rows.push_back({cols[0], cols[1], std::stod(cols[2]), cols[3] == "hex" || cols[3] == "uuid",
+                        cols[3] == "uuid", cols[5]});
     }
     return rows;
 }
@@ -284,12 +290,16 @@ struct Outcome {
 };
 
 // Counts all regex hits, plus entropy hits at or above the thresholds.
+// `leave_out` drops rows, to see what one rule adds.
 Outcome judge(const std::vector<Row>& rows, const Labels& labels, bool entropy, double hex_t,
-              double other_t) {
+              double other_t, const std::function<bool(const Row&)>& leave_out = {}) {
     Outcome out;
     out.found.assign(labels.count, false);
     for (const auto& r : rows) {
         if (r.rule == entropy_id && (!entropy || r.entropy < (r.hex ? hex_t : other_t))) {
+            continue;
+        }
+        if (leave_out && leave_out(r)) {
             continue;
         }
         const auto col_colon = r.location.rfind(':');
@@ -376,6 +386,22 @@ int credata(const std::string& tsv, const std::string& meta, const std::string& 
         std::snprintf(name, sizeof name, "%.2f", t);
         print_outcome(name, judge(rows, labels, true, t, t), truths);
     }
+
+    std::printf("\n");
+    print_outcome_header("whole tool at default, without");
+    print_outcome("(nothing left out)", judge(rows, labels, true, hex_default, other_default),
+                  truths);
+    for (const auto& [rule, rule_rows] : by_rule) {
+        print_outcome(rule, judge(rows, labels, true, hex_default, other_default,
+                                  [&](const Row& r) { return r.rule == rule; }),
+                      truths);
+    }
+    // Without UUIDs as hex they would need the other threshold.
+    print_outcome("UUIDs as hex", judge(rows, labels, true, hex_default, other_default,
+                                        [&](const Row& r) {
+                                            return r.uuid && r.entropy < other_default;
+                                        }),
+                  truths);
 
     const auto chosen = judge(rows, labels, true, hex_default, other_default);
     std::map<std::string, std::pair<std::size_t, std::size_t>> by_category;  // found, total

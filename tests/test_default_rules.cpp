@@ -172,3 +172,46 @@ TEST_CASE("the prefilter never changes the findings") {
     CHECK(with.size() > 100);  // the test is only useful if things are found
     CHECK(with == without);
 }
+
+TEST_CASE("placeholders are recognised") {
+    using unsecret::looks_like_placeholder;
+    for (const char* value : {"${DB_PASSWORD}", "$PASS", "%(password)s", "{{ secret }}",
+                              "<password>", "xxxxxxxx", "********", "changeme123",
+                              "your_api_key_here", "Password", "example-token"}) {
+        CHECK(looks_like_placeholder(value));
+    }
+    for (const char* value : {"hunter2hunter2", "s3cr3t-value", "Tr0ub4dor&3"}) {
+        CHECK_FALSE(looks_like_placeholder(value));
+    }
+}
+
+TEST_CASE("generic-password-assignment skips placeholders") {
+    CHECK(found("generic-password-assignment", "password = \"${DB_PASSWORD}\"").empty());
+    CHECK(found("generic-password-assignment", "api_key: \"your_api_key_here\"").empty());
+}
+
+TEST_CASE("unquoted-password-assignment") {
+    CHECK(found("unquoted-password-assignment", "DB_PASSWORD=" "hunter2hunter2") == Strings{"hunter2hunter2"});
+    CHECK(found("unquoted-password-assignment", "  password: " "S3cure!pass") == Strings{"S3cure!pass"});
+    CHECK(found("unquoted-password-assignment", "mysql --password=" "Tr0ub4dor3 db") == Strings{"Tr0ub4dor3"});
+
+    CHECK(found("unquoted-password-assignment", "password = user_password").empty());  // code, no digit
+    CHECK(found("unquoted-password-assignment", "password = self.password").empty());
+    CHECK(found("unquoted-password-assignment", "pwd = get_pwd(name2)").empty());       // a call
+    CHECK(found("unquoted-password-assignment", "if (password == input2) {").empty());
+    CHECK(found("unquoted-password-assignment", "un" "secret::Scanner scanner;").empty());
+    CHECK(found("unquoted-password-assignment", "PASSWORD=${DB_PASS}").empty());
+    CHECK(found("unquoted-password-assignment", "password = \"quoted123\"").empty());   // the quoted rule's job
+}
+
+TEST_CASE("url-credentials reports the password") {
+    const std::string url = "postgres://app:" + std::string("S3cretPass") + "@db.local:5432/x";
+    CHECK(found("url-credentials", "DATABASE_URL=" + url) == Strings{"S3cretPass"});
+    CHECK(found("url-credentials", "https://user:" + std::string("tok3n_abc") + "@github.com/a/b") ==
+          Strings{"tok3n_abc"});
+
+    CHECK(found("url-credentials", "https://example.com/path").empty());
+    CHECK(found("url-credentials", "https://user@example.com").empty());              // no password
+    CHECK(found("url-credentials", "postgres://app:" "password@localhost/x").empty());  // placeholder
+    CHECK(found("url-credentials", "redis://:${REDIS_PASS}@cache:6379").empty());
+}
