@@ -4,6 +4,11 @@ name: credata
 on:
   workflow_dispatch:
     inputs:
+      half:
+        description: Repos to score. Tune with "tune"; use "test" once, for the final numbers.
+        type: choice
+        options: [tune, test]
+        default: tune
       benchmark:
         description: Also measure speed on the dataset (slow)
         type: boolean
@@ -65,7 +70,7 @@ jobs:
             echo
             cat scan.txt
             echo
-            ./build/unsecret_eval credata findings.tsv credata/meta
+            ./build/unsecret_eval credata findings.tsv credata/meta --half "${{ inputs.half }}"
           } > results.txt
           { echo '```'; cat results.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 

@@ -1,7 +1,7 @@
 // Helps label findings and tune the entropy thresholds.
 //   unsecret_eval scan <out.tsv> [--unmasked] <folder>...
 //   unsecret_eval score <labeled.tsv>
-//   unsecret_eval credata <out.tsv> <credata-meta-folder>
+//   unsecret_eval credata <out.tsv> <credata-meta-folder> [--half tune|test]
 // Label: put tp (real or test secret) or fp in the first column.
 
 #include <cstdio>
@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <set>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -197,13 +198,37 @@ std::vector<std::string> split_csv(const std::string& line) {
     return cols;
 }
 
+// CredData paths look like data/<repo id>/...
+std::string_view repo_of(std::string_view path) {
+    const auto first = path.find('/');
+    if (first == std::string_view::npos) {
+        return {};
+    }
+    const auto second = path.find('/', first + 1);
+    return path.substr(first + 1, second == std::string_view::npos ? second : second - first - 1);
+}
+
+// Repo IDs are hex hashes, so this splits the repos about in half:
+// tune with 0-7, report with 8-f.
+bool in_half(std::string_view path, std::string_view half) {
+    if (half == "all") {
+        return true;
+    }
+    const auto repo = repo_of(path);
+    if (repo.empty()) {
+        return false;
+    }
+    const bool tune = repo[0] >= '0' && repo[0] <= '7';
+    return half == "tune" ? tune : !tune;
+}
+
 struct Labels {
     std::map<std::string, std::vector<Label>> by_file;
     std::vector<std::pair<std::string, std::size_t>> truths;  // category, id
     std::size_t count = 0;
 };
 
-Labels read_labels(const std::filesystem::path& meta) {
+Labels read_labels(const std::filesystem::path& meta, std::string_view half) {
     Labels labels;
     for (const auto& entry : std::filesystem::directory_iterator(meta)) {
         if (entry.path().extension() != ".csv") {
@@ -230,7 +255,7 @@ Labels read_labels(const std::filesystem::path& meta) {
 
         while (std::getline(in, line)) {
             const auto cols = split_csv(line);
-            if (cols.size() < header.size()) {
+            if (cols.size() < header.size() || !in_half(cols[path_col], half)) {
                 continue;
             }
             Label label;
@@ -307,13 +332,19 @@ void print_outcome_header(const char* first) {
                 "prec(all)", "found", "true", "false", "unlabeled");
 }
 
-int credata(const std::string& tsv, const std::string& meta) {
-    const auto rows = read_rows(tsv);
-    const auto labels = read_labels(meta);
+int credata(const std::string& tsv, const std::string& meta, const std::string& half) {
+    auto rows = read_rows(tsv);
+    std::erase_if(rows, [&](const Row& r) { return !in_half(r.location, half); });
+    const auto labels = read_labels(meta, half);
     const auto truths = labels.truths.size();
 
-    std::printf("labels: %zu true (T), %zu false (F, X), in %zu files\n", truths,
-                labels.count - truths, labels.by_file.size());
+    std::set<std::string_view> repos;
+    for (const auto& [file, list] : labels.by_file) {
+        repos.insert(repo_of(file));
+    }
+    std::printf("half: %s (tune: repo IDs 0-7, test: 8-f)\n", half.c_str());
+    std::printf("labels: %zu true (T), %zu false (F, X), in %zu files of %zu repos\n", truths,
+                labels.count - truths, labels.by_file.size(), repos.size());
     std::printf("findings: %zu rows\n", rows.size());
     std::printf("recall: share of T labels hit. prec(lab): true / (true + false).\n"
                 "prec(all): the same, with unlabeled lines counted as false.\n\n");
@@ -366,7 +397,7 @@ int usage() {
     std::fprintf(stderr,
                  "usage: unsecret_eval scan <out.tsv> [--unmasked] <folder>...\n"
                  "       unsecret_eval score <labeled.tsv>\n"
-                 "       unsecret_eval credata <out.tsv> <credata-meta-folder>\n");
+                 "       unsecret_eval credata <out.tsv> <credata-meta-folder> [--half tune|test]\n");
     return 2;
 }
 
@@ -391,7 +422,11 @@ int main(int argc, char* argv[]) {
             return score(args[1]);
         }
         if (args.size() == 3 && args[0] == "credata") {
-            return credata(args[1], args[2]);
+            return credata(args[1], args[2], "all");
+        }
+        if (args.size() == 5 && args[0] == "credata" && args[3] == "--half" &&
+            (args[4] == "tune" || args[4] == "test")) {
+            return credata(args[1], args[2], args[4]);
         }
         return usage();
     } catch (const std::exception& e) {
