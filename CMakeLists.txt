@@ -14,7 +14,7 @@ endif()
 
 option(UNSECRET_SANITIZE "Build with sanitizers (ASan + UBSan; ASan only on MSVC)" OFF)
 option(UNSECRET_BUILD_TESTS "Build unit tests" ON)
-option(UNSECRET_BUILD_BENCH "Build the speed benchmark" ON)
+option(UNSECRET_BUILD_TOOLS "Build the benchmark and evaluation tools" ON)
 
 if(UNSECRET_SANITIZE AND MINGW)
     message(FATAL_ERROR "MinGW GCC has no sanitizer support. Use MSVC, or run the sanitizer build on Linux.")
@@ -57,10 +57,14 @@ add_executable(unsecret src/main.cpp)
 target_link_libraries(unsecret PRIVATE unsecret_core)
 unsecret_configure_target(unsecret)
 
-if(UNSECRET_BUILD_BENCH)
-    add_executable(unsecret_bench bench/bench_scan.cpp)
+if(UNSECRET_BUILD_TOOLS)
+    add_executable(unsecret_bench tools/bench.cpp)
     target_link_libraries(unsecret_bench PRIVATE unsecret_core)
     unsecret_configure_target(unsecret_bench)
+
+    add_executable(unsecret_eval tools/eval.cpp)
+    target_link_libraries(unsecret_eval PRIVATE unsecret_core)
+    unsecret_configure_target(unsecret_eval)
 endif()
 
 if(UNSECRET_BUILD_TESTS)

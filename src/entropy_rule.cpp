@@ -7,7 +7,7 @@ namespace unsecret {
 
 namespace {
 
-bool is_hex(char c) {
+bool is_hex_char(char c) {
     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 }
 
@@ -37,6 +37,15 @@ double shannon_entropy(std::string_view s) {
     return bits;
 }
 
+bool is_hex(std::string_view s) {
+    for (const char c : s) {
+        if (!is_hex_char(c)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 EntropyRule::EntropyRule(double hex_threshold, double base64_threshold, std::size_t min_length)
     : hex_threshold_(hex_threshold), base64_threshold_(base64_threshold), min_length_(min_length) {}
 
@@ -51,14 +60,12 @@ std::vector<Match> EntropyRule::find(std::string_view line) const {
             continue;
         }
         const std::size_t start = i;
-        bool hex = true;
         while (i < line.size() && is_word_char(line[i])) {
-            hex = hex && is_hex(line[i]);
             ++i;
         }
         const auto word = line.substr(start, i - start);
         if (word.size() >= min_length_ &&
-            shannon_entropy(word) >= (hex ? hex_threshold_ : base64_threshold_)) {
+            shannon_entropy(word) >= (is_hex(word) ? hex_threshold_ : base64_threshold_)) {
             matches.push_back({start, word.size()});
         }
     }

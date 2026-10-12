@@ -10,6 +10,9 @@ namespace unsecret {
 // Bits per character.
 double shannon_entropy(std::string_view s);
 
+// Only 0-9, a-f, A-F.
+bool is_hex(std::string_view s);
+
 // Flags long, random-looking words. Hex words get their own threshold:
 // with 16 letters they can never pass 4 bits.
 class EntropyRule : public Rule {
