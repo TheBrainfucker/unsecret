@@ -35,6 +35,15 @@ std::optional<std::string> read_file(const fs::path& file, std::uintmax_t size) 
     return content;
 }
 
+bool overlaps_any(const Match& m, const std::vector<Match>& others) {
+    for (const auto& o : others) {
+        if (m.pos < o.pos + o.len && o.pos < m.pos + m.len) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 bool looks_binary(std::string_view content) {
@@ -188,22 +197,32 @@ void Scanner::scan_line(std::string_view line, std::size_t line_number, const fs
         // Run a rule's regex only if one of its keywords is here.
         const auto to_run = prefilter_ ? (filter_.find(window) | always_run_) : ~std::uint64_t{0};
 
-        for (std::size_t i = 0; i < rules_.size(); ++i) {
-            if (((to_run >> i) & 1) == 0) {
-                continue;
-            }
-            const auto& rule = rules_[i];
-            for (const auto& match : rule->find(window)) {
-                if (match.pos >= keep_before) {
+        // Normal rules first, so fallback hits can be checked against them.
+        std::vector<Match> normal_hits;
+        for (const bool fallback : {false, true}) {
+            for (std::size_t i = 0; i < rules_.size(); ++i) {
+                const auto& rule = rules_[i];
+                if (rule->is_fallback() != fallback || ((to_run >> i) & 1) == 0) {
                     continue;
                 }
-                out.push_back(Finding{
-                    file,
-                    line_number,
-                    offset + match.pos + 1,
-                    std::string(rule->id()),
-                    std::string(window.substr(match.pos, match.len)),
-                });
+                for (const auto& match : rule->find(window)) {
+                    if (fallback && overlaps_any(match, normal_hits)) {
+                        continue;
+                    }
+                    if (!fallback) {
+                        normal_hits.push_back(match);
+                    }
+                    if (match.pos >= keep_before) {
+                        continue;
+                    }
+                    out.push_back(Finding{
+                        file,
+                        line_number,
+                        offset + match.pos + 1,
+                        std::string(rule->id()),
+                        std::string(window.substr(match.pos, match.len)),
+                    });
+                }
             }
         }
         if (last) {

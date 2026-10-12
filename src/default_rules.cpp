@@ -1,5 +1,6 @@
 #include "unsecret/default_rules.hpp"
 
+#include "unsecret/entropy_rule.hpp"
 #include "unsecret/regex_rule.hpp"
 
 namespace unsecret {
@@ -40,6 +41,8 @@ std::vector<std::unique_ptr<Rule>> default_rules() {
         R"re((?:password|passwd|pwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)["']?[ \t]{0,8}[:=][ \t]{0,8}["']([^"'\s]{8,128})["'])re",
         std::vector<std::string>{"passw", "pwd", "secret", "api", "token"},
         std::regex::ECMAScript | std::regex::icase));
+
+    rules.push_back(std::make_unique<EntropyRule>());
 
     return rules;
 }

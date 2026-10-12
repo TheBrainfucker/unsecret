@@ -24,6 +24,9 @@ public:
 
     // Every match holds one of these (any case). Empty means always run.
     virtual std::vector<std::string> keywords() const { return {}; }
+
+    // A fallback hit is dropped if it overlaps a hit of a normal rule.
+    virtual bool is_fallback() const { return false; }
 };
 
 }  // namespace unsecret

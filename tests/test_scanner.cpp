@@ -117,6 +117,24 @@ TEST_CASE("scan_text strips CRLF and a UTF-8 BOM, and reads a last line without 
     CHECK(findings[2].line == 4);  // the empty line still counts
 }
 
+TEST_CASE("a fallback hit is dropped when it overlaps a normal hit") {
+    class FallbackLineRule : public WholeLineRule {
+    public:
+        std::string_view id() const override { return "fallback"; }
+        bool is_fallback() const override { return true; }
+    };
+    auto scanner = marker_scanner();
+    scanner.add_rule(std::make_unique<FallbackLineRule>());
+
+    std::vector<unsecret::Finding> findings;
+    scanner.scan_text("x FINDME y\nplain\n", "f.txt", findings);
+
+    REQUIRE(findings.size() == 2);
+    CHECK(findings[0].rule_id == "marker");
+    CHECK(findings[1].rule_id == "fallback");
+    CHECK(findings[1].line == 2);
+}
+
 TEST_CASE("long lines are scanned in overlapping windows without duplicates or gaps") {
     using unsecret::Scanner;
     constexpr auto step = Scanner::window_size - Scanner::window_overlap;

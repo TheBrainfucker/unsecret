@@ -10,16 +10,26 @@ namespace unsecret {
 // Bits per character.
 double shannon_entropy(std::string_view s);
 
-// Flags long, random-looking words.
+// Flags long, random-looking words. Hex words get their own threshold:
+// with 16 letters they can never pass 4 bits.
 class EntropyRule : public Rule {
 public:
-    EntropyRule(double threshold, std::size_t min_length);
+    // Start values, to be tuned on real repos.
+    static constexpr double default_hex_threshold = 3.0;
+    static constexpr double default_base64_threshold = 4.5;
+    static constexpr std::size_t default_min_length = 20;
+
+    EntropyRule(double hex_threshold = default_hex_threshold,
+                double base64_threshold = default_base64_threshold,
+                std::size_t min_length = default_min_length);
 
     std::string_view id() const override;
     std::vector<Match> find(std::string_view line) const override;
+    bool is_fallback() const override { return true; }
 
 private:
-    double threshold_;
+    double hex_threshold_;
+    double base64_threshold_;
     std::size_t min_length_;
 };
 

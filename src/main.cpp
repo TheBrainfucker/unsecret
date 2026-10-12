@@ -4,7 +4,6 @@
 #include <utility>
 
 #include "unsecret/default_rules.hpp"
-#include "unsecret/entropy_rule.hpp"
 #include "unsecret/report.hpp"
 #include "unsecret/scanner.hpp"
 
@@ -21,8 +20,6 @@ int main(int argc, char* argv[]) {
         for (auto& rule : unsecret::default_rules()) {
             scanner.add_rule(std::move(rule));
         }
-
-        // TODO: add the entropy rule.
 
         const auto result = scanner.scan(argv[1]);
         unsecret::print_report(result, std::cout, std::cerr);
