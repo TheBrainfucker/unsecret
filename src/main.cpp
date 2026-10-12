@@ -14,15 +14,17 @@ int main(int argc, char* argv[]) {
         return 2;
     }
 
-    unsecret::Scanner scanner;
-
-    // TODO (Milestone 2): register your RegexRules here. Check every pattern
-    // against the vendor's own documentation before adding it.
-    // scanner.add_rule(std::make_unique<unsecret::RegexRule>("rule-id", "pattern"));
-
-    // TODO (Milestone 3): register an EntropyRule and tune its threshold.
-
     try {
+        // Rules are registered inside the try: RegexRule compiles its pattern in the
+        // constructor, and an invalid pattern throws std::regex_error.
+        unsecret::Scanner scanner;
+
+        // TODO (Milestone 2): register your RegexRules here. Check every pattern
+        // against the vendor's own documentation before adding it.
+        // scanner.add_rule(std::make_unique<unsecret::RegexRule>("rule-id", "pattern"));
+
+        // TODO (Milestone 3): register an EntropyRule and tune its threshold.
+
         const auto findings = scanner.scan(argv[1]);
 
         // TODO (Milestone 4): print each finding as file:line [rule-id] masked-match.

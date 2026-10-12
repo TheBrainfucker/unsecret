@@ -16,7 +16,7 @@ public:
     EntropyRule(double threshold, std::size_t min_length);
 
     std::string_view id() const override;
-    std::vector<std::string> find(std::string_view line) const override;
+    std::vector<Match> find(std::string_view line) const override;
 
 private:
     double threshold_;

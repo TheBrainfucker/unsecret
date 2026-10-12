@@ -13,7 +13,7 @@ public:
     RegexRule(std::string id, const std::string& pattern);
 
     std::string_view id() const override;
-    std::vector<std::string> find(std::string_view line) const override;
+    std::vector<Match> find(std::string_view line) const override;
 
 private:
     std::string id_;

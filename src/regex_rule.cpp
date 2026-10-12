@@ -9,9 +9,10 @@ RegexRule::RegexRule(std::string id, const std::string& pattern)
 
 std::string_view RegexRule::id() const { return id_; }
 
-std::vector<std::string> RegexRule::find(std::string_view line) const {
+std::vector<Match> RegexRule::find(std::string_view line) const {
     // TODO (Milestone 2): iterate over all regex matches in `line`
-    // (hint: std::regex_iterator) and collect each match as a string.
+    // (hint: std::regex_iterator over line.begin()/line.end()) and record
+    // each match's position and length.
     (void)line;
     return {};
 }

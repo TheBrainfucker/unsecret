@@ -35,8 +35,10 @@ function(unsecret_configure_target target)
             # does not support. If it errors, use --config RelWithDebInfo instead.
             target_compile_options(${target} PRIVATE /fsanitize=address)
         else()
-            target_compile_options(${target} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
-            target_link_options(${target} PRIVATE -fsanitize=address,undefined)
+            # -fno-sanitize-recover: UBSan otherwise only prints the error and the test still passes.
+            target_compile_options(${target} PRIVATE
+                -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
+            target_link_options(${target} PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=all)
         endif()
     endif()
 endfunction()
