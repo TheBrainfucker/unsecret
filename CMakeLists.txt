@@ -67,8 +67,16 @@ if(UNSECRET_BUILD_TESTS)
     FetchContent_MakeAvailable(Catch2)
 
     enable_testing()
-    add_executable(unsecret_tests tests/test_rules.cpp)
+    add_executable(unsecret_tests
+        tests/test_rules.cpp
+        tests/test_scanner.cpp
+    )
     target_link_libraries(unsecret_tests PRIVATE unsecret_core Catch2::Catch2WithMain)
     unsecret_configure_target(unsecret_tests)
-    add_test(NAME unsecret_tests COMMAND unsecret_tests)
+
+    # One CTest entry per test case, so ctest and the CI log name the failing test.
+    # PRE_TEST lists the tests when ctest runs, not at build time.
+    list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
+    include(Catch)
+    catch_discover_tests(unsecret_tests DISCOVERY_MODE PRE_TEST)
 endif()

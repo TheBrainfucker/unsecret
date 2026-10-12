@@ -25,12 +25,16 @@ int main(int argc, char* argv[]) {
 
         // TODO (Milestone 3): register an EntropyRule and tune its threshold.
 
-        const auto findings = scanner.scan(argv[1]);
+        const auto result = scanner.scan(argv[1]);
 
-        // TODO (Milestone 4): print each finding as file:line [rule-id] masked-match.
-        // Never print the full secret.
+        for (const auto& file : result.unreadable) {
+            std::cerr << "unsecret: warning: could not read " << file.generic_string() << '\n';
+        }
 
-        return findings.empty() ? 0 : 1;
+        // TODO (Milestone 4): print each finding as file:line [rule-id] masked-match,
+        // then the summary line. Never print the full secret.
+
+        return result.findings.empty() ? 0 : 1;
     } catch (const std::exception& e) {
         std::cerr << "unsecret: " << e.what() << '\n';
         return 2;
