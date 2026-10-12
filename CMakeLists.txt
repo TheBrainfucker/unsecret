@@ -45,6 +45,7 @@ add_library(unsecret_core
     src/regex_rule.cpp
     src/default_rules.cpp
     src/keyword_filter.cpp
+    src/report.cpp
     src/entropy_rule.cpp
     src/scanner.cpp
 )
@@ -76,6 +77,7 @@ if(UNSECRET_BUILD_TESTS)
         tests/test_rules.cpp
         tests/test_default_rules.cpp
         tests/test_keyword_filter.cpp
+        tests/test_report.cpp
         tests/test_scanner.cpp
     )
     target_link_libraries(unsecret_tests PRIVATE unsecret_core Catch2::Catch2WithMain)
@@ -85,4 +87,9 @@ if(UNSECRET_BUILD_TESTS)
     list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
     include(Catch)
     catch_discover_tests(unsecret_tests DISCOVERY_MODE PRE_TEST)
+
+    add_test(NAME cli COMMAND ${CMAKE_COMMAND}
+        -DUNSECRET=$<TARGET_FILE:unsecret>
+        -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/cli_test
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_test.cmake)
 endif()

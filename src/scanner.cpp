@@ -1,10 +1,12 @@
 #include "unsecret/scanner.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <tuple>
 #include <utility>
 
 namespace fs = std::filesystem;
@@ -110,6 +112,13 @@ ScanResult Scanner::scan(const fs::path& root) const {
     if (ec) {
         throw fs::filesystem_error("cannot walk directory", root, ec);
     }
+
+    // Folder order differs between systems.
+    std::sort(result.findings.begin(), result.findings.end(), [](const auto& a, const auto& b) {
+        return std::tie(a.file, a.line, a.column, a.rule_id) <
+               std::tie(b.file, b.line, b.column, b.rule_id);
+    });
+    std::sort(result.unreadable.begin(), result.unreadable.end());
     return result;
 }
 
