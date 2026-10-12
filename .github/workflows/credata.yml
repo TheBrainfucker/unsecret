@@ -1,0 +1,88 @@
+name: credata
+
+# Manual only. Scores unsecret on the CredData benchmark (needs Linux to build the data).
+on:
+  workflow_dispatch:
+    inputs:
+      benchmark:
+        description: Also measure speed on the dataset (slow)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get CredData
+        uses: actions/checkout@v4
+        with:
+          repository: Samsung/CredData
+          path: credata
+
+      - id: credata
+        run: echo "sha=$(git -C credata rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the dataset
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: credata/data
+          key: credata-data-${{ steps.credata.outputs.sha }}
+
+      - uses: actions/setup-python@v5
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          python-version: '3.10'
+
+      - name: Build the dataset
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: credata
+        run: |
+          pip install -r requirements.txt
+          python download_data.py --data_dir data --jobs 4
+          rm -rf tmp
+
+      - name: Build unsecret
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DUNSECRET_BUILD_TESTS=OFF
+          cmake --build build --parallel --target unsecret_eval unsecret_bench
+
+      - name: Scan
+        working-directory: credata
+        run: ../build/unsecret_eval scan ../findings.tsv data | tee ../scan.txt
+
+      - name: Score
+        run: |
+          {
+            echo "CredData commit: ${{ steps.credata.outputs.sha }}"
+            echo "unsecret commit: $GITHUB_SHA"
+            echo
+            cat scan.txt
+            echo
+            ./build/unsecret_eval credata findings.tsv credata/meta
+          } > results.txt
+          { echo '```'; cat results.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Speed
+        if: inputs.benchmark
+        working-directory: credata
+        run: |
+          ../build/unsecret_bench data | tee ../speed.txt
+          { echo '```'; cat ../speed.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: credata-results
+          path: |
+            results.txt
+            speed.txt
+            findings.tsv
+          if-no-files-found: ignore

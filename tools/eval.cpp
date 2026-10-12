@@ -1,14 +1,17 @@
 // Helps label findings and tune the entropy thresholds.
 //   unsecret_eval scan <out.tsv> [--unmasked] <folder>...
 //   unsecret_eval score <labeled.tsv>
+//   unsecret_eval credata <out.tsv> <credata-meta-folder>
 // Label: put tp (real or test secret) or fp in the first column.
 
 #include <cstdio>
 #include <exception>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -68,8 +71,10 @@ int scan(const std::string& out_path, bool unmasked, const std::vector<std::stri
                 << '\t' << no_tabs(unmasked ? f.match : unsecret::mask(f.match)) << '\n';
         }
         total += result.findings.size();
-        std::printf("%s: %zu findings, %zu files\n", folder.c_str(), result.findings.size(),
-                    result.files_scanned);
+        std::printf("%s: %zu findings in %zu files (skipped %zu binary, %zu too large, "
+                    "%zu unreadable)\n",
+                    folder.c_str(), result.findings.size(), result.files_scanned,
+                    result.skipped_binary, result.skipped_large, result.unreadable.size());
     }
     std::printf("wrote %zu rows to %s\n", total, out_path.c_str());
     if (unmasked) {
@@ -83,7 +88,33 @@ struct Row {
     std::string rule;
     double entropy = 0;
     bool hex = false;
+    std::string location;  // path:line:column
 };
+
+std::vector<Row> read_rows(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        throw std::runtime_error("cannot read " + path);
+    }
+    std::vector<Row> rows;
+    std::string line;
+    std::getline(in, line);  // header
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        std::vector<std::string> cols;
+        std::stringstream fields(line);
+        for (std::string col; std::getline(fields, col, '\t');) {
+            cols.push_back(col);
+        }
+        if (cols.size() < 6) {
+            continue;
+        }
+        rows.push_back({cols[0], cols[1], std::stod(cols[2]), cols[3] == "hex", cols[5]});
+    }
+    return rows;
+}
 
 struct Counts {
     std::size_t tp = 0, fp = 0, unlabeled = 0;
@@ -104,28 +135,7 @@ void print_counts(const std::string& name, const Counts& c) {
 }
 
 int score(const std::string& path) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) {
-        std::fprintf(stderr, "cannot read %s\n", path.c_str());
-        return 2;
-    }
-    std::vector<Row> rows;
-    std::string line;
-    std::getline(in, line);  // header
-    while (std::getline(in, line)) {
-        if (!line.empty() && line.back() == '\r') {
-            line.pop_back();
-        }
-        std::vector<std::string> cols;
-        std::stringstream fields(line);
-        for (std::string col; std::getline(fields, col, '\t');) {
-            cols.push_back(col);
-        }
-        if (cols.size() < 4) {
-            continue;
-        }
-        rows.push_back({cols[0], cols[1], std::stod(cols[2]), cols[3] == "hex"});
-    }
+    const auto rows = read_rows(path);
 
     std::printf("%-34s %6s %6s %6s %10s\n", "rule", "found", "tp", "fp", "unlabeled");
     std::map<std::string, Counts> by_rule;
@@ -162,10 +172,201 @@ int score(const std::string& path) {
     return 0;
 }
 
+// CredData labels: https://github.com/Samsung/CredData
+// A label covers lines first..last of a file. T is a real secret; F and X are not.
+struct Label {
+    std::size_t first = 0;
+    std::size_t last = 0;
+    bool truth = false;
+    std::string category;
+    std::size_t id = 0;  // index into the found flags
+};
+
+std::vector<std::string> split_csv(const std::string& line) {
+    std::vector<std::string> cols(1);
+    bool quoted = false;
+    for (const char c : line) {
+        if (c == '"') {
+            quoted = !quoted;
+        } else if (c == ',' && !quoted) {
+            cols.emplace_back();
+        } else if (c != '\r') {
+            cols.back() += c;
+        }
+    }
+    return cols;
+}
+
+struct Labels {
+    std::map<std::string, std::vector<Label>> by_file;
+    std::vector<std::pair<std::string, std::size_t>> truths;  // category, id
+    std::size_t count = 0;
+};
+
+Labels read_labels(const std::filesystem::path& meta) {
+    Labels labels;
+    for (const auto& entry : std::filesystem::directory_iterator(meta)) {
+        if (entry.path().extension() != ".csv") {
+            continue;
+        }
+        std::ifstream in(entry.path(), std::ios::binary);
+        std::string line;
+        std::getline(in, line);
+        const auto header = split_csv(line);
+        auto column = [&](std::string_view name) {
+            for (std::size_t i = 0; i < header.size(); ++i) {
+                if (header[i] == name) {
+                    return i;
+                }
+            }
+            throw std::runtime_error("no column " + std::string(name) + " in " +
+                                     entry.path().string());
+        };
+        const auto path_col = column("FilePath");
+        const auto first_col = column("LineStart");
+        const auto last_col = column("LineEnd");
+        const auto truth_col = column("GroundTruth");
+        const auto category_col = column("Category");
+
+        while (std::getline(in, line)) {
+            const auto cols = split_csv(line);
+            if (cols.size() < header.size()) {
+                continue;
+            }
+            Label label;
+            label.first = std::stoul(cols[first_col]);
+            label.last = std::stoul(cols[last_col]);
+            label.truth = cols[truth_col] == "T";
+            label.category = cols[category_col];
+            label.id = labels.count++;
+            labels.by_file[cols[path_col]].push_back(label);
+        }
+    }
+    for (const auto& [file, list] : labels.by_file) {
+        for (const auto& label : list) {
+            if (label.truth) {
+                labels.truths.emplace_back(label.category, label.id);
+            }
+        }
+    }
+    return labels;
+}
+
+struct Outcome {
+    Counts counts;  // tp: on a T line, fp: on an F or X line
+    std::vector<bool> found;
+    std::size_t truths_found = 0;
+};
+
+// Counts all regex hits, plus entropy hits at or above the thresholds.
+Outcome judge(const std::vector<Row>& rows, const Labels& labels, bool entropy, double hex_t,
+              double other_t) {
+    Outcome out;
+    out.found.assign(labels.count, false);
+    for (const auto& r : rows) {
+        if (r.rule == entropy_id && (!entropy || r.entropy < (r.hex ? hex_t : other_t))) {
+            continue;
+        }
+        const auto col_colon = r.location.rfind(':');
+        const auto line_colon = r.location.rfind(':', col_colon - 1);
+        const auto file = r.location.substr(0, line_colon);
+        const auto line = std::stoul(r.location.substr(line_colon + 1, col_colon - line_colon - 1));
+
+        bool on_truth = false;
+        bool on_false = false;
+        if (const auto it = labels.by_file.find(file); it != labels.by_file.end()) {
+            for (const auto& label : it->second) {
+                if (line < label.first || line > label.last) {
+                    continue;
+                }
+                (label.truth ? on_truth : on_false) = true;
+                if (label.truth && !out.found[label.id]) {
+                    out.found[label.id] = true;
+                    ++out.truths_found;
+                }
+            }
+        }
+        out.counts.add(on_truth ? "tp" : on_false ? "fp" : "");
+    }
+    return out;
+}
+
+double percent(std::size_t part, std::size_t whole) {
+    return whole ? 100.0 * static_cast<double>(part) / static_cast<double>(whole) : 0.0;
+}
+
+void print_outcome(const std::string& name, const Outcome& o, std::size_t truths) {
+    const auto& c = o.counts;
+    std::printf("%-30s %7.1f%% %9.1f%% %9.1f%% %8zu %7zu %7zu %9zu\n", name.c_str(),
+                percent(o.truths_found, truths), percent(c.tp, c.tp + c.fp),
+                percent(c.tp, c.total()), c.total(), c.tp, c.fp, c.unlabeled);
+}
+
+void print_outcome_header(const char* first) {
+    std::printf("%-30s %8s %10s %10s %8s %7s %7s %9s\n", first, "recall", "prec(lab)",
+                "prec(all)", "found", "true", "false", "unlabeled");
+}
+
+int credata(const std::string& tsv, const std::string& meta) {
+    const auto rows = read_rows(tsv);
+    const auto labels = read_labels(meta);
+    const auto truths = labels.truths.size();
+
+    std::printf("labels: %zu true (T), %zu false (F, X), in %zu files\n", truths,
+                labels.count - truths, labels.by_file.size());
+    std::printf("findings: %zu rows\n", rows.size());
+    std::printf("recall: share of T labels hit. prec(lab): true / (true + false).\n"
+                "prec(all): the same, with unlabeled lines counted as false.\n\n");
+
+    const double hex_default = unsecret::EntropyRule::default_hex_threshold;
+    const double other_default = unsecret::EntropyRule::default_base64_threshold;
+
+    print_outcome_header("rule (entropy at default)");
+    std::map<std::string, std::vector<Row>> by_rule;
+    for (const auto& r : rows) {
+        by_rule[r.rule].push_back(r);
+    }
+    for (const auto& [rule, rule_rows] : by_rule) {
+        print_outcome(rule, judge(rule_rows, labels, true, hex_default, other_default), truths);
+    }
+
+    std::printf("\n");
+    print_outcome_header("whole tool, entropy hex/other");
+    print_outcome("no entropy rule", judge(rows, labels, false, 0, 0), truths);
+    for (const auto& [hex_t, other_t] : threshold_pairs) {
+        char name[48];
+        std::snprintf(name, sizeof name, "%.2f / %.2f", hex_t, other_t);
+        print_outcome(name, judge(rows, labels, true, hex_t, other_t), truths);
+    }
+    std::printf("\n");
+    print_outcome_header("whole tool, one threshold");
+    for (const auto t : single_thresholds) {
+        char name[48];
+        std::snprintf(name, sizeof name, "%.2f", t);
+        print_outcome(name, judge(rows, labels, true, t, t), truths);
+    }
+
+    const auto chosen = judge(rows, labels, true, hex_default, other_default);
+    std::map<std::string, std::pair<std::size_t, std::size_t>> by_category;  // found, total
+    for (const auto& [category, id] : labels.truths) {
+        auto& [found, total] = by_category[category];
+        ++total;
+        found += chosen.found[id] ? 1 : 0;
+    }
+    std::printf("\nrecall by CredData category (entropy at default)\n");
+    std::printf("%-40s %7s %7s %8s\n", "category", "true", "found", "recall");
+    for (const auto& [category, counts] : by_category) {
+        std::printf("%-40s %7zu %7zu %7.1f%%\n", category.c_str(), counts.second, counts.first,
+                    percent(counts.first, counts.second));
+    }
+    return 0;
+}
+
 int usage() {
     std::fprintf(stderr,
                  "usage: unsecret_eval scan <out.tsv> [--unmasked] <folder>...\n"
-                 "       unsecret_eval score <labeled.tsv>\n");
+                 "       unsecret_eval score <labeled.tsv>\n"
+                 "       unsecret_eval credata <out.tsv> <credata-meta-folder>\n");
     return 2;
 }
 
@@ -188,6 +389,9 @@ int main(int argc, char* argv[]) {
         }
         if (args.size() == 2 && args[0] == "score") {
             return score(args[1]);
+        }
+        if (args.size() == 3 && args[0] == "credata") {
+            return credata(args[1], args[2]);
         }
         return usage();
     } catch (const std::exception& e) {
