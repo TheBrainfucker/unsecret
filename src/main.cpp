@@ -1,13 +1,13 @@
 #include <exception>
 #include <iostream>
 #include <memory>
+#include <utility>
 
+#include "unsecret/default_rules.hpp"
 #include "unsecret/entropy_rule.hpp"
-#include "unsecret/regex_rule.hpp"
 #include "unsecret/scanner.hpp"
 
-// Exit codes: 0 = clean, 1 = secrets found, 2 = usage or runtime error.
-// Exit code 1 is what lets a git hook or CI job block the commit.
+// Exit codes: 0 clean, 1 secrets found, 2 error.
 int main(int argc, char* argv[]) {
     if (argc != 2) {
         std::cerr << "usage: unsecret <file-or-directory>\n";
@@ -15,15 +15,13 @@ int main(int argc, char* argv[]) {
     }
 
     try {
-        // Rules are registered inside the try: RegexRule compiles its pattern in the
-        // constructor, and an invalid pattern throws std::regex_error.
+        // A bad regex throws here, so this stays inside the try.
         unsecret::Scanner scanner;
+        for (auto& rule : unsecret::default_rules()) {
+            scanner.add_rule(std::move(rule));
+        }
 
-        // TODO (Milestone 2): register your RegexRules here. Check every pattern
-        // against the vendor's own documentation before adding it.
-        // scanner.add_rule(std::make_unique<unsecret::RegexRule>("rule-id", "pattern"));
-
-        // TODO (Milestone 3): register an EntropyRule and tune its threshold.
+        // TODO: add the entropy rule.
 
         const auto result = scanner.scan(argv[1]);
 
@@ -31,8 +29,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "unsecret: warning: could not read " << file.generic_string() << '\n';
         }
 
-        // TODO (Milestone 4): print each finding as file:line [rule-id] masked-match,
-        // then the summary line. Never print the full secret.
+        // TODO: print findings (masked) and a summary.
 
         return result.findings.empty() ? 0 : 1;
     } catch (const std::exception& e) {

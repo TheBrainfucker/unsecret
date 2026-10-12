@@ -1,5 +1,5 @@
-# Normalise line endings the same way on every OS and every git autocrlf setting.
+# Same line endings on every OS.
 * text=auto
 
-# Fixtures are compared byte for byte (including deliberate CRLF/LF test files).
+# Keep test files byte for byte.
 tests/fixtures/** -text

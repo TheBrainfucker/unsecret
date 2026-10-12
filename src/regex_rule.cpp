@@ -4,17 +4,24 @@
 
 namespace unsecret {
 
-RegexRule::RegexRule(std::string id, const std::string& pattern)
-    : id_(std::move(id)), pattern_(pattern) {}
+RegexRule::RegexRule(std::string id, const std::string& pattern, std::regex::flag_type flags)
+    : id_(std::move(id)), pattern_(pattern, flags) {}
 
 std::string_view RegexRule::id() const { return id_; }
 
 std::vector<Match> RegexRule::find(std::string_view line) const {
-    // TODO (Milestone 2): iterate over all regex matches in `line`
-    // (hint: std::regex_iterator over line.begin()/line.end()) and record
-    // each match's position and length.
-    (void)line;
-    return {};
+    using Iterator = std::regex_iterator<std::string_view::const_iterator>;
+    const int group = pattern_.mark_count() > 0 ? 1 : 0;
+
+    std::vector<Match> matches;
+    for (Iterator it(line.begin(), line.end(), pattern_), end; it != end; ++it) {
+        const auto& m = *it;
+        if (m[group].matched && m.length(group) > 0) {
+            matches.push_back({static_cast<std::size_t>(m.position(group)),
+                               static_cast<std::size_t>(m.length(group))});
+        }
+    }
+    return matches;
 }
 
 }  // namespace unsecret

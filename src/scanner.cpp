@@ -15,8 +15,7 @@ namespace {
 constexpr std::size_t binary_sniff_size = 8 * 1024;
 constexpr std::string_view utf8_bom = "\xEF\xBB\xBF";
 
-// Reads the whole file in binary mode (no newline translation on Windows).
-// `size` comes from the directory walk; if the file changed since, we read what is there.
+// Binary mode: keep \r\n as is on Windows.
 std::optional<std::string> read_file(const fs::path& file, std::uintmax_t size) {
     std::ifstream in(file, std::ios::binary);
     if (!in) {
@@ -65,13 +64,12 @@ ScanResult Scanner::scan(const fs::path& root) const {
     fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec);
     const fs::recursive_directory_iterator end;
 
-    // Fail closed: if the walk itself breaks, part of the tree was never looked at,
-    // and reporting "clean" would be wrong. Problems with single files are only counted.
+    // If the walk breaks, throw: a half scan must not look clean.
     for (; !ec && it != end; it.increment(ec)) {
         const fs::directory_entry& entry = *it;
         std::error_code entry_ec;
 
-        // Symlinks are not followed: they can point outside the tree or form loops.
+        // Links can leave the folder or loop.
         if (entry.is_symlink(entry_ec)) {
             continue;
         }
@@ -82,7 +80,7 @@ ScanResult Scanner::scan(const fs::path& root) const {
             continue;
         }
         if (!entry.is_regular_file(entry_ec)) {
-            continue;  // sockets, devices, pipes
+            continue;
         }
 
         const auto size = entry.file_size(entry_ec);
@@ -123,8 +121,6 @@ void Scanner::scan_text(std::string_view text, const fs::path& file,
         text.remove_prefix(utf8_bom.size());
     }
 
-    // TODO (Milestone 2): cap the line length before running regex rules
-    // (std::regex can overflow the stack on very long lines) and count skipped lines.
     std::size_t line_number = 0;
     std::size_t start = 0;
     while (start < text.size()) {
@@ -137,19 +133,37 @@ void Scanner::scan_text(std::string_view text, const fs::path& file,
             line.remove_suffix(1);
         }
         ++line_number;
+        scan_line(line, line_number, file, out);
+        start = end + 1;
+    }
+}
+
+void Scanner::scan_line(std::string_view line, std::size_t line_number, const fs::path& file,
+                        std::vector<Finding>& out) const {
+    // A piece keeps only hits that start before the next piece, so none is counted twice.
+    constexpr std::size_t step = window_size - window_overlap;
+    for (std::size_t offset = 0;; offset += step) {
+        const auto window = line.substr(offset, window_size);
+        const bool last = offset + window.size() >= line.size();
+        const std::size_t keep_before = last ? window.size() : step;
 
         for (const auto& rule : rules_) {
-            for (const auto& match : rule->find(line)) {
+            for (const auto& match : rule->find(window)) {
+                if (match.pos >= keep_before) {
+                    continue;
+                }
                 out.push_back(Finding{
                     file,
                     line_number,
-                    match.pos + 1,  // byte column, not UTF-8 characters
+                    offset + match.pos + 1,
                     std::string(rule->id()),
-                    std::string(line.substr(match.pos, match.len)),
+                    std::string(window.substr(match.pos, match.len)),
                 });
             }
         }
-        start = end + 1;
+        if (last) {
+            break;
+        }
     }
 }
 

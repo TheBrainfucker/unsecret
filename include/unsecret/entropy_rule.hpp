@@ -7,10 +7,10 @@
 
 namespace unsecret {
 
-// Shannon entropy of a string, in bits per character.
+// Bits per character.
 double shannon_entropy(std::string_view s);
 
-// Flags long, random-looking tokens that match no known format.
+// Flags long, random-looking words.
 class EntropyRule : public Rule {
 public:
     EntropyRule(double threshold, std::size_t min_length);

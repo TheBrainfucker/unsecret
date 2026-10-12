@@ -7,10 +7,12 @@
 
 namespace unsecret {
 
-// Detects secrets with a known format (AWS keys, GitHub tokens, private key headers...).
+// If the pattern has a group, only group 1 is reported.
+// Keep repeats bounded ({8,128}, not +): std::regex is recursive.
 class RegexRule : public Rule {
 public:
-    RegexRule(std::string id, const std::string& pattern);
+    RegexRule(std::string id, const std::string& pattern,
+              std::regex::flag_type flags = std::regex::ECMAScript);
 
     std::string_view id() const override;
     std::vector<Match> find(std::string_view line) const override;

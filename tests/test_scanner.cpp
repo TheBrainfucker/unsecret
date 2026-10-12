@@ -17,7 +17,6 @@ using namespace std::string_literals;
 
 namespace {
 
-// Matches every occurrence of the literal "FINDME".
 class MarkerRule : public unsecret::Rule {
 public:
     std::string_view id() const override { return "marker"; }
@@ -34,7 +33,7 @@ private:
     static constexpr std::string_view marker = "FINDME";
 };
 
-// Matches every non-empty line as a whole, to see exactly what the scanner passes in.
+// Shows exactly what the scanner passes in.
 class WholeLineRule : public unsecret::Rule {
 public:
     std::string_view id() const override { return "line"; }
@@ -46,8 +45,7 @@ public:
     }
 };
 
-// A fresh directory under the system temp dir, removed again at the end of the test.
-// Built at runtime so the tree (a .git folder, a binary file) never has to live in git.
+// Built at runtime, so no .git folder or binary file lives in the repo.
 class TempDir {
 public:
     TempDir() {
@@ -117,6 +115,31 @@ TEST_CASE("scan_text strips CRLF and a UTF-8 BOM, and reads a last line without 
     CHECK(findings[1].match == "second");
     CHECK(findings[2].match == "last");
     CHECK(findings[2].line == 4);  // the empty line still counts
+}
+
+TEST_CASE("long lines are scanned in overlapping windows without duplicates or gaps") {
+    using unsecret::Scanner;
+    constexpr auto step = Scanner::window_size - Scanner::window_overlap;
+    const auto scanner = marker_scanner();
+
+    // Hits at the start, on both piece edges, and at the end.
+    std::string line(3 * Scanner::window_size, '.');
+    const std::vector<std::size_t> positions = {
+        0, step - 3, Scanner::window_size - 3, line.size() - 6};
+    for (const auto pos : positions) {
+        line.replace(pos, 6, "FINDME");
+    }
+
+    std::vector<unsecret::Finding> findings;
+    scanner.scan_text(line, "long.txt", findings);
+
+    std::vector<std::size_t> columns;
+    for (const auto& f : findings) {
+        CHECK(f.match == "FINDME");
+        columns.push_back(f.column - 1);
+    }
+    std::sort(columns.begin(), columns.end());
+    CHECK(columns == positions);
 }
 
 TEST_CASE("scanning a directory visits text files and skips .git, binary and large files") {
