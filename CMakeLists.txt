@@ -14,6 +14,7 @@ endif()
 
 option(UNSECRET_SANITIZE "Build with sanitizers (ASan + UBSan; ASan only on MSVC)" OFF)
 option(UNSECRET_BUILD_TESTS "Build unit tests" ON)
+option(UNSECRET_BUILD_BENCH "Build the speed benchmark" ON)
 
 if(UNSECRET_SANITIZE AND MINGW)
     message(FATAL_ERROR "MinGW GCC has no sanitizer support. Use MSVC, or run the sanitizer build on Linux.")
@@ -43,6 +44,7 @@ endfunction()
 add_library(unsecret_core
     src/regex_rule.cpp
     src/default_rules.cpp
+    src/keyword_filter.cpp
     src/entropy_rule.cpp
     src/scanner.cpp
 )
@@ -52,6 +54,12 @@ unsecret_configure_target(unsecret_core)
 add_executable(unsecret src/main.cpp)
 target_link_libraries(unsecret PRIVATE unsecret_core)
 unsecret_configure_target(unsecret)
+
+if(UNSECRET_BUILD_BENCH)
+    add_executable(unsecret_bench bench/bench_scan.cpp)
+    target_link_libraries(unsecret_bench PRIVATE unsecret_core)
+    unsecret_configure_target(unsecret_bench)
+endif()
 
 if(UNSECRET_BUILD_TESTS)
     include(FetchContent)
@@ -67,6 +75,7 @@ if(UNSECRET_BUILD_TESTS)
     add_executable(unsecret_tests
         tests/test_rules.cpp
         tests/test_default_rules.cpp
+        tests/test_keyword_filter.cpp
         tests/test_scanner.cpp
     )
     target_link_libraries(unsecret_tests PRIVATE unsecret_core Catch2::Catch2WithMain)

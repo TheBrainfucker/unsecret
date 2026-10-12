@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -39,7 +40,23 @@ bool looks_binary(std::string_view content) {
 Scanner::Scanner(std::uintmax_t max_file_size) : max_file_size_(max_file_size) {}
 
 void Scanner::add_rule(std::unique_ptr<Rule> rule) {
+    if (rules_.size() == KeywordFilter::max_groups) {
+        throw std::length_error("too many rules");
+    }
     rules_.push_back(std::move(rule));
+
+    std::vector<std::pair<std::string, std::size_t>> keywords;
+    always_run_ = 0;
+    for (std::size_t i = 0; i < rules_.size(); ++i) {
+        const auto rule_keywords = rules_[i]->keywords();
+        if (rule_keywords.empty()) {
+            always_run_ |= std::uint64_t{1} << i;
+        }
+        for (const auto& k : rule_keywords) {
+            keywords.emplace_back(k, i);
+        }
+    }
+    filter_ = KeywordFilter(keywords);
 }
 
 ScanResult Scanner::scan(const fs::path& root) const {
@@ -112,6 +129,7 @@ void Scanner::scan_file(const fs::path& file, const fs::path& display, std::uint
         return;
     }
     ++result.files_scanned;
+    result.bytes_scanned += content->size();
     scan_text(*content, display, result.findings);
 }
 
@@ -147,7 +165,14 @@ void Scanner::scan_line(std::string_view line, std::size_t line_number, const fs
         const bool last = offset + window.size() >= line.size();
         const std::size_t keep_before = last ? window.size() : step;
 
-        for (const auto& rule : rules_) {
+        // Run a rule's regex only if one of its keywords is here.
+        const auto to_run = prefilter_ ? (filter_.find(window) | always_run_) : ~std::uint64_t{0};
+
+        for (std::size_t i = 0; i < rules_.size(); ++i) {
+            if (((to_run >> i) & 1) == 0) {
+                continue;
+            }
+            const auto& rule = rules_[i];
             for (const auto& match : rule->find(window)) {
                 if (match.pos >= keep_before) {
                     continue;

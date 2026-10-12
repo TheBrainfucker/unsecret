@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "unsecret/finding.hpp"
+#include "unsecret/keyword_filter.hpp"
 #include "unsecret/rule.hpp"
 
 namespace unsecret {
@@ -14,6 +15,7 @@ namespace unsecret {
 struct ScanResult {
     std::vector<Finding> findings;
     std::size_t files_scanned = 0;
+    std::uintmax_t bytes_scanned = 0;
     std::size_t skipped_binary = 0;
     std::size_t skipped_large = 0;
     std::vector<std::filesystem::path> unreadable;  // a warning, not an error
@@ -32,7 +34,11 @@ public:
 
     explicit Scanner(std::uintmax_t max_file_size = default_max_file_size);
 
+    // At most 64 rules.
     void add_rule(std::unique_ptr<Rule> rule);
+
+    // On by default. Off is for tests and the benchmark.
+    void use_prefilter(bool on) { prefilter_ = on; }
 
     // A file or a folder. Throws if `root` can't be read at all.
     ScanResult scan(const std::filesystem::path& root) const;
@@ -48,6 +54,9 @@ private:
 
     std::uintmax_t max_file_size_;
     std::vector<std::unique_ptr<Rule>> rules_;
+    KeywordFilter filter_;
+    std::uint64_t always_run_ = 0;  // rules without keywords
+    bool prefilter_ = true;
 };
 
 }  // namespace unsecret

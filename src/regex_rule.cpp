@@ -4,10 +4,13 @@
 
 namespace unsecret {
 
-RegexRule::RegexRule(std::string id, const std::string& pattern, std::regex::flag_type flags)
-    : id_(std::move(id)), pattern_(pattern, flags) {}
+RegexRule::RegexRule(std::string id, const std::string& pattern, std::vector<std::string> keywords,
+                     std::regex::flag_type flags)
+    : id_(std::move(id)), pattern_(pattern, flags), keywords_(std::move(keywords)) {}
 
 std::string_view RegexRule::id() const { return id_; }
+
+std::vector<std::string> RegexRule::keywords() const { return keywords_; }
 
 std::vector<Match> RegexRule::find(std::string_view line) const {
     using Iterator = std::regex_iterator<std::string_view::const_iterator>;

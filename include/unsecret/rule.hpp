@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -20,6 +21,9 @@ public:
     virtual std::string_view id() const = 0;
 
     virtual std::vector<Match> find(std::string_view line) const = 0;
+
+    // Every match holds one of these (any case). Empty means always run.
+    virtual std::vector<std::string> keywords() const { return {}; }
 };
 
 }  // namespace unsecret

@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <memory>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -134,4 +135,40 @@ TEST_CASE("default rules on a very long line: no stack overflow, secret at the e
     REQUIRE(findings.size() == 1);
     CHECK(findings[0].rule_id == "aws-access-key-id");
     CHECK(findings[0].column == line.size() - key.size() + 1);
+}
+
+TEST_CASE("the prefilter never changes the findings") {
+    // Random lines built from rule pieces, so real hits and near misses both show up.
+    const std::vector<std::string> pieces = {
+        "AK" "IA", "AS" "IA", "IOSFODNN7EXAMPLE", "gh" "p_", "gh" "s_", "github" "_pat_",
+        "xo" "xb-", "xo" "xe.xapp-", "123-", "-----BEG" "IN ", "RSA ", "PRIVATE KEY-----",
+        "Pass" "word", "api_key", "TOKEN", "secret", " = ", ": ", "\"", "'", " ",
+        std::string(16, 'a'), std::string(32, 'Z'), "x", "_", "-", ".", "9"};
+
+    std::mt19937 random(12345);
+    std::uniform_int_distribution<std::size_t> pick(0, pieces.size() - 1);
+    std::uniform_int_distribution<int> length(1, 30);
+    std::string text;
+    for (int line = 0; line < 3000; ++line) {
+        for (int n = length(random); n > 0; --n) {
+            text += pieces[pick(random)];
+        }
+        text += '\n';
+    }
+
+    auto scan = [&](bool prefilter) {
+        unsecret::Scanner scanner;
+        for (auto& r : unsecret::default_rules()) {
+            scanner.add_rule(std::move(r));
+        }
+        scanner.use_prefilter(prefilter);
+        std::vector<unsecret::Finding> findings;
+        scanner.scan_text(text, "random.txt", findings);
+        return findings;
+    };
+
+    const auto with = scan(true);
+    const auto without = scan(false);
+    CHECK(with.size() > 100);  // the test is only useful if things are found
+    CHECK(with == without);
 }

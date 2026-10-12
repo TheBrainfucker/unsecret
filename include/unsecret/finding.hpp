@@ -12,6 +12,8 @@ struct Finding {
     std::size_t column = 0;    // starts at 1, in bytes
     std::string rule_id;
     std::string match;         // the real secret: mask before printing
+
+    bool operator==(const Finding&) const = default;
 };
 
 }  // namespace unsecret
