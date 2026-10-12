@@ -43,20 +43,18 @@ unsecret <file-or-folder>
 Each finding prints as `file:line:column [rule] masked-value`, so editors can jump to it.
 Findings go to stdout; warnings and the summary go to stderr.
 
-**Masking:** a value of 16 or more characters shows its first 4 characters (for most
-tokens that is the public prefix, such as `AKIA` or `ghp_`). Shorter values are fully
-hidden. The length is never shown.
+Values are masked. A value of 16 or more characters shows its first 4 characters, which
+for most tokens is just the public prefix (`AKIA`, `ghp_`). Shorter values are fully
+hidden, and the length is never shown.
 
-**Exit codes:**
-
-| Code | Meaning |
+| Exit code | Meaning |
 |---|---|
 | 0 | No secrets found |
 | 1 | Secrets found (use this to block a commit or fail CI) |
 | 2 | Usage or runtime error |
 
-**What gets skipped:** `.git` folders, binary files (a NUL byte in the first 8 KB),
-files over 1 MB, and symlinks. Files that can't be read are listed as warnings.
+It skips `.git` folders, binary files (a NUL byte in the first 8 KB), files over 1 MB and
+symlinks. Files that can't be read are listed as warnings.
 
 ### Ignoring files
 
@@ -76,33 +74,32 @@ tests/fixtures/
 
 ## How it works
 
-```
-walk the folder ─► read each file once ─► split into lines
-                                              │
-             keyword prefilter (one pass) ◄───┘
-                        │  only rules whose keyword is on the line
-                        ▼
-          regex rules ─► entropy rule (dropped if it overlaps a regex hit)
-                        │
-                        ▼
-              sort ─► mask ─► print ─► exit code
-```
+1. Walk the folder, skipping `.git`, ignored paths, binary and large files.
+2. Read each file once and split it into lines.
+3. Find every rule keyword on the line in one pass, and run only the rules whose
+   keywords are there.
+4. Run the entropy rule, and drop its hits where a regex rule already matched.
+5. Sort the findings, mask them, print them, and set the exit code.
 
-A few design choices:
+### Keyword prefilter
 
-- **Keyword prefilter.** Every format rule lists keywords that each of its matches must
-  contain (`akia`, `ghp_`, `-----begin `...). A hand-written Aho-Corasick automaton finds
-  all of them in one pass over the line, and a rule's regex only runs when one of its
-  keywords is there. A differential test checks that findings are identical with the
-  filter on and off.
-- **Long lines are scanned in overlapping pieces.** Minified files can have one huge line,
-  and `std::regex` is recursive in all three major standard libraries. Instead of skipping
-  such lines (a blind spot), they are scanned in 4 KB windows that overlap by more than any
-  match can be long; each match is reported once, by the window it starts in.
-- **Fails closed.** If walking the folder breaks partway, the scan stops with exit code 2
-  instead of reporting a partial scan as clean.
-- **Same output on every OS.** Files are read in binary mode (CRLF and a UTF-8 BOM are
-  handled), paths are printed with `/`, and findings are sorted.
+Every format rule lists keywords that each of its matches must contain (`akia`, `ghp_`,
+`-----begin `...). A hand-written Aho-Corasick automaton finds all of them in one pass over
+the line, and a rule's regex only runs when one of its keywords is there. A test runs the
+same input with the filter on and off and checks that the findings are identical.
+
+### Long lines
+
+Minified files can have one huge line, and `std::regex` is recursive in all three major
+standard libraries. Skipping such lines would leave a blind spot, so they are scanned in
+4 KB windows that overlap by more than any match can be long. Each match is reported once,
+by the window it starts in.
+
+### Errors
+
+If walking the folder breaks partway, the scan stops with exit code 2 rather than report
+a partial scan as clean. Files are read in binary mode (CRLF and a UTF-8 BOM are handled),
+paths are printed with `/` and findings are sorted, so the output is the same on every OS.
 
 ## How well it works
 
@@ -117,35 +114,36 @@ measured once, after tuning had stopped.
 
 | | Recall | Precision (labelled lines) | Precision (all lines) |
 |---|---|---|---|
-| **unsecret** | **64.8%** | **82.6%** | **32.9%** |
+| unsecret | 64.8% | 82.6% | 32.9% |
 | Without the entropy rule | 25.5% | 63.4% | 58.2% |
 | One entropy threshold (4.5) for every string | 37.5% | 81.7% | 33.4% |
 
-- **Recall:** the share of labelled secrets that unsecret reports.
-- **Precision (labelled lines):** of the findings on lines a person reviewed, the share
-  that are real secrets.
-- **Precision (all lines):** the same, but counting every finding on an unreviewed line as
-  wrong. This is a worst case: CredData only reviewed suspicious lines, so many lines were
-  never checked.
+Recall is the share of labelled secrets that unsecret reports. Precision is the share of
+its findings that are real secrets, counted two ways: only on lines a person reviewed, and
+on all lines with every unreviewed hit counted as wrong. The second is a worst case, since
+CredData only reviewed suspicious lines.
 
-What I found:
+### What I found
 
-- **Hex needs its own entropy threshold.** Hex strings use only 16 characters, so their
-  entropy can never pass 4 bits per character, while base64 can reach 6. With one threshold
-  of 4.5, hex keys are invisible; a separate hex threshold of 3.0 raises recall from 37.5%
-  to 64.8% at the same precision.
-- **Format rules are precise but rare.** Private keys (91%) and Slack tokens (91%) are
-  rarely wrong, but all regex rules together find only a quarter of the secrets. Most
-  secrets have no fixed format, so the entropy rule does most of the work.
-- **Tuned rules do worse on code they haven't seen.** The unquoted-password rule was 88%
-  precise on the tuning half and 63% on the test half. Without the split, the reported
-  numbers would have been too good.
-- **Treating UUIDs as hex helps here, but depends on the code.** CredData counts UUIDs used
-  as keys or tokens as secrets, and on this data the change is worth 24 points of recall.
-  In code full of harmless UUID IDs, it adds noise.
-- **Still missed:** passwords on command lines (including PowerShell
-  `ConvertTo-SecureString`), in SQL and in curl options, and many vendor-specific formats.
-  Across the whole dataset, 167 files over 1 MB were skipped.
+Hex strings need their own entropy threshold. They use only 16 characters, so their
+entropy can never pass 4 bits per character, while base64 can reach 6. With a single
+threshold of 4.5, hex keys are invisible. A separate hex threshold of 3.0 raised recall
+from 37.5% to 64.8% at the same precision.
+
+The format rules are rarely wrong (private keys 91%, Slack tokens 91%), but together they
+find only a quarter of the secrets. Most secrets have no fixed format, and the entropy
+rule does most of the work.
+
+Rules tuned on one set of repos did worse on the other. The unquoted-password rule was 88%
+precise on the tuning half and 63% on the test half. Without the split, the numbers above
+would have looked better than they are.
+
+Treating UUIDs as hex is worth 24 points of recall here, because CredData counts UUIDs
+used as keys or tokens as secrets. In code full of ordinary UUID IDs it would add noise.
+
+It still misses passwords on command lines (such as PowerShell `ConvertTo-SecureString`),
+in SQL and in curl options, and many vendor-specific formats. Across the whole dataset,
+167 files over 1 MB were skipped.
 
 Reproduce it with the manual `credata` workflow in `.github/workflows/`
 (CredData commit `0b1940e`, unsecret commit `15a55f9`).
@@ -159,12 +157,12 @@ On all of CredData (11,398 files), on a GitHub Actions Linux runner (GCC, Releas
 | Keyword prefilter off | 1.8 MB/s | 75,625 |
 | Keyword prefilter on | 23.9 MB/s | 75,625 |
 
-The prefilter makes scanning **13.6x faster** with exactly the same findings. CredData is a
-hard case: it was chosen for being full of credentials, so many lines hold a keyword and the
-regexes still have to run. On a made-up corpus where 1% of lines hold a keyword, the speedup
-was about 60-100x in local runs.
+The prefilter makes scanning 13.6x faster with the same findings. CredData is a hard case
+for it: the dataset was chosen for being full of credentials, so many lines hold a keyword
+and the regexes still have to run. On a made-up corpus where 1% of lines hold a keyword,
+the speedup was about 60-100x in local runs.
 
-`unsecret_bench` measures this yourself, and fails if the two runs find different things:
+To measure it yourself (it fails if the two runs find different things):
 
 ```
 ./build/unsecret_bench              # a made-up 4 MB code-like corpus
