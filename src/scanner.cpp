@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "unsecret/ignore_list.hpp"
+#include "unsecret/path_text.hpp"
 
 namespace fs = std::filesystem;
 
@@ -108,7 +109,7 @@ ScanResult Scanner::scan(const fs::path& root) const {
         if (entry.is_directory(entry_ec)) {
             if (entry.path().filename() == ".git") {
                 it.disable_recursion_pending();
-            } else if (ignore.ignores(relative.generic_string(), true)) {
+            } else if (ignore.ignores(path_text(relative), true)) {
                 it.disable_recursion_pending();
                 ++result.skipped_ignored;
             }
@@ -117,7 +118,7 @@ ScanResult Scanner::scan(const fs::path& root) const {
         if (!entry.is_regular_file(entry_ec)) {
             continue;
         }
-        if (ignore.ignores(relative.generic_string(), false)) {
+        if (ignore.ignores(path_text(relative), false)) {
             ++result.skipped_ignored;
             continue;
         }

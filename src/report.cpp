@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <set>
 
+#include "unsecret/path_text.hpp"
+
 namespace unsecret {
 
 namespace {
@@ -37,11 +39,11 @@ std::string mask(std::string_view secret) {
 
 void print_report(const ScanResult& result, std::ostream& out, std::ostream& summary) {
     for (const auto& f : result.findings) {
-        out << f.file.generic_string() << ':' << f.line << ':' << f.column << " [" << f.rule_id
+        out << path_text(f.file) << ':' << f.line << ':' << f.column << " [" << f.rule_id
             << "] " << mask(f.match) << '\n';
     }
     for (const auto& file : result.unreadable) {
-        summary << "warning: could not read " << file.generic_string() << '\n';
+        summary << "warning: could not read " << path_text(file) << '\n';
     }
 
     std::set<std::filesystem::path> files;

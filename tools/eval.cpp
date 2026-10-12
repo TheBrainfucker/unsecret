@@ -20,6 +20,7 @@
 
 #include "unsecret/default_rules.hpp"
 #include "unsecret/entropy_rule.hpp"
+#include "unsecret/path_text.hpp"
 #include "unsecret/report.hpp"
 #include "unsecret/scanner.hpp"
 
@@ -72,7 +73,7 @@ int scan(const std::string& out_path, bool unmasked, const std::vector<std::stri
                     : unsecret::is_hex(f.match) ? "hex"
                                                 : "other")
                 << '\t' << f.match.size() << '\t'
-                << folder << '/' << f.file.generic_string() << ':' << f.line << ':' << f.column
+                << folder << '/' << unsecret::path_text(f.file) << ':' << f.line << ':' << f.column
                 << '\t' << no_tabs(unmasked ? f.match : unsecret::mask(f.match)) << '\n';
         }
         total += result.findings.size();

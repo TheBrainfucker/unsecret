@@ -38,5 +38,11 @@ if(NOT at EQUAL -1)
     message(FATAL_ERROR "leaky: the full key was printed")
 endif()
 
+# Names outside the ANSI code page must not break the scan on Windows.
+file(MAKE_DIRECTORY "${WORK_DIR}/names/café")
+file(WRITE "${WORK_DIR}/names/café/日本語.py" "k = \"${key}\"\n")
+run(names 1 "${WORK_DIR}/names")
+expect(names "café/日本語.py:1:6 [aws-access-key-id]" "${out}")
+
 run(missing 2 "${WORK_DIR}/missing")
 run(usage 2)
